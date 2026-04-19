@@ -82,7 +82,9 @@ def process_pdf(uploaded_file):
 
 # --- UI Setup ---
 st.set_page_config(page_title="Auto PDF Splitter & Renamer", page_icon="📦")
-st.title("📦 Smart PDF Splitter (AI OCR Scanner)")
+
+# YAHAN TITLE CHANGE KIYA GAYA HAI
+st.title("📦 Smart PDF Splitter")
 st.write("Apna courier PDF upload karein. Agar Barcode dhundhla hua, toh App automatically Text padh kar rename karega!")
 
 uploaded_file = st.file_uploader("Upload Main PDF File", type=["pdf"])
