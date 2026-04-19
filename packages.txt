@@ -1,1 +1,1 @@
-libzbar0
+tesseract-ocr
