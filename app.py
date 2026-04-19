@@ -41,10 +41,13 @@ def process_pdf(uploaded_file):
                 # Agar us page pe QR read nahi hua, toh backup name
                 file_name = f"Unscanned_Page_{page_num + 1}.pdf"
                 
-            # 3. Single page alag karna
+            # 3. Single page alag karna aur SIZE KAM KARNA (Yahan change kiya gaya hai)
             new_pdf = fitz.open()
             new_pdf.insert_pdf(pdf_document, from_page=page_num, to_page=page_num)
-            pdf_bytes = new_pdf.write()
+            
+            # Is line se PDF compress hogi aur size kam aayega
+            pdf_bytes = new_pdf.write(garbage=4, deflate=True, clean=True)
+            
             new_pdf.close()
             
             # 4. Zip file mein save karna
@@ -61,7 +64,7 @@ uploaded_file = st.file_uploader("Upload Main PDF File", type=["pdf"])
 
 if uploaded_file is not None:
     if st.button("Magic Start 🪄 (Process & ZIP)"):
-        with st.spinner("Scannig Barcodes aur PDF split ho raha hai..."):
+        with st.spinner("Scanning Barcodes aur PDF split ho raha hai..."):
             try:
                 zip_data = process_pdf(uploaded_file)
                 st.success("🎉 Process Complete! Aapki ZIP file taiyaar hai.")
