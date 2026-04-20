@@ -29,17 +29,36 @@ def get_docket_from_image(page):
         docket_id = decoded_objects_2[0].data.decode('utf-8').strip()
         return "".join(x for x in docket_id if x.isalnum() or x in "._-")
         
-    # 4. TISRA TRY (OCR FALLBACK): Agar dono Barcode fail ho jayein, toh Photo mein se TEXT (Number) padho
+    # 4. TISRA TRY (SMART OCR): Sirf AWB/Docket number padhna, Mobile/Ph number nahi
     try:
-        # OCR (Tesseract) photo padhega
         extracted_text = pytesseract.image_to_string(sharp_img)
         
-        # Us photo mein 10 se 20 digit ka lamba number dhoondo (Jaise: 7001812736)
-        match_num = re.search(r'\b\d{10,20}\b', extracted_text)
-        if match_num:
-            return match_num.group(0)
+        # Condition A: Agar text mein AWB, Waybill ya Docket likha ho (Sabse Accurate)
+        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*([A-Za-z0-9]{8,18})', extracted_text, re.IGNORECASE)
+        if keyword_match:
+            return keyword_match.group(1)
+            
+        # Condition B: Safexpress format jisme space hota hai (Jaise: 1000 3524 5962)
+        safe_match = re.search(r'\b(\d{4}\s\d{4}\s\d{4})\b', extracted_text)
+        if safe_match:
+            return safe_match.group(1).replace(" ", "")
+
+        # Condition C: Agar upar kuch na mile, toh sirf wo number uthayein jo Mobile ya Phone na ho
+        lines = extracted_text.split('\n')
+        for line in lines:
+            # Agar line mein Mobile, Phone, Ph, Pincode ya GST likha hai, toh usko ignore karein
+            if re.search(r'mob|ph\s|phone|contact|pincode|gst', line, re.IGNORECASE):
+                continue
+                
+            # Baki bachi line mein 9 se 18 digit ka number dhoondein (Kyunki barcode number bada hota hai)
+            nums = re.findall(r'\b\d{9,18}\b', line)
+            for n in nums:
+                # Agar 9999999999 jaisa koi fake ek jaisa number hai toh usko ignore karein
+                if n == n[0] * len(n):
+                    continue
+                return n
     except Exception as e:
-        pass # Agar OCR mein koi dikkat aaye toh code crashe na ho
+        pass # Agar OCR fail ho jaye toh code crash na ho
         
     return None
 
@@ -60,7 +79,7 @@ def process_pdf(uploaded_file):
             else:
                 file_name = f"Unscanned_Page_{page_num + 1}.pdf"
                 
-            # --- SUPER COMPRESSION LOGIC (Size kam karne ke liye) ---
+            # --- SUPER COMPRESSION LOGIC (Size kam karne ke liye - 100-150KB) ---
             pix_low = page.get_pixmap(dpi=150, colorspace=fitz.csGRAY)
             img = Image.frombytes("L",[pix_low.width, pix_low.height], pix_low.samples)
             
@@ -82,8 +101,6 @@ def process_pdf(uploaded_file):
 
 # --- UI Setup ---
 st.set_page_config(page_title="Auto PDF Splitter & Renamer", page_icon="📦")
-
-# YAHAN TITLE CHANGE KIYA GAYA HAI
 st.title("📦 Smart PDF Splitter")
 st.write("Apna courier PDF upload karein. Agar Barcode dhundhla hua, toh App automatically Text padh kar rename karega!")
 
