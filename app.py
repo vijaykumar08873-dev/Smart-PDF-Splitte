@@ -13,52 +13,61 @@ def get_docket_from_image(page):
     pix = page.get_pixmap(dpi=300)
     img = Image.frombytes("RGB",[pix.width, pix.height], pix.samples)
     
+    # Helper Function: Check karne ke liye ki result mein NUMBER hai ya nahi
+    def is_valid_docket(text):
+        clean_text = "".join(x for x in text if x.isalnum() or x in "._-")
+        # Docket kam se kam 6 digit ka hona chahiye aur usme NUMBER hona zaruri hai
+        is_valid = len(clean_text) >= 6 and any(c.isdigit() for c in clean_text)
+        return is_valid, clean_text
+
     # 2. PEHLA TRY: Normal Barcode Scan
     decoded_objects = decode(img)
-    if decoded_objects:
-        docket_id = decoded_objects[0].data.decode('utf-8').strip()
-        return "".join(x for x in docket_id if x.isalnum() or x in "._-")
+    for obj in decoded_objects:
+        valid, clean_data = is_valid_docket(obj.data.decode('utf-8').strip())
+        if valid:
+            return clean_data
         
-    # 3. DUSRA TRY: Image ko Black & White aur Sharp karke Barcode Scan (Dhundhle QR/Barcode ke liye)
+    # 3. DUSRA TRY: Image ko Black & White aur Sharp karke Barcode Scan
     gray_img = ImageOps.grayscale(img)
     enhancer = ImageEnhance.Contrast(gray_img)
     sharp_img = enhancer.enhance(2.0)
     
     decoded_objects_2 = decode(sharp_img)
-    if decoded_objects_2:
-        docket_id = decoded_objects_2[0].data.decode('utf-8').strip()
-        return "".join(x for x in docket_id if x.isalnum() or x in "._-")
+    for obj in decoded_objects_2:
+        valid, clean_data = is_valid_docket(obj.data.decode('utf-8').strip())
+        if valid:
+            return clean_data
         
-    # 4. TISRA TRY (SMART OCR): Sirf AWB/Docket number padhna, Mobile/Ph number nahi
+    # 4. TISRA TRY (SMART OCR): Sirf Number wale Docket uthana
     try:
         extracted_text = pytesseract.image_to_string(sharp_img)
         
-        # Condition A: Agar text mein AWB, Waybill ya Docket likha ho (Sabse Accurate)
-        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*([A-Za-z0-9]{8,18})', extracted_text, re.IGNORECASE)
+        # Condition A: Agar text mein AWB, Waybill ya Docket likha ho (AB ISME NUMBER HONA ZARURI HAI)
+        # \d lagane se ab ye "signifies" jaise words ko reject kar dega
+        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*([A-Za-z0-9]*\d[A-Za-z0-9]*)', extracted_text, re.IGNORECASE)
         if keyword_match:
-            return keyword_match.group(1)
+            docket_str = keyword_match.group(1).strip()
+            if len(docket_str) >= 6: # Confirm lambaai
+                return docket_str
             
         # Condition B: Safexpress format jisme space hota hai (Jaise: 1000 3524 5962)
         safe_match = re.search(r'\b(\d{4}\s\d{4}\s\d{4})\b', extracted_text)
         if safe_match:
             return safe_match.group(1).replace(" ", "")
 
-        # Condition C: Agar upar kuch na mile, toh sirf wo number uthayein jo Mobile ya Phone na ho
+        # Condition C: Agar upar kuch na mile, toh lamba number dhoondo (Mobile, Date, Pincode chhodkar)
         lines = extracted_text.split('\n')
         for line in lines:
-            # Agar line mein Mobile, Phone, Ph, Pincode ya GST likha hai, toh usko ignore karein
-            if re.search(r'mob|ph\s|phone|contact|pincode|gst', line, re.IGNORECASE):
+            if re.search(r'mob|ph\s|phone|contact|pincode|gst|date|time', line, re.IGNORECASE):
                 continue
                 
-            # Baki bachi line mein 9 se 18 digit ka number dhoondein (Kyunki barcode number bada hota hai)
-            nums = re.findall(r'\b\d{9,18}\b', line)
+            nums = re.findall(r'\b\d{8,18}\b', line)
             for n in nums:
-                # Agar 9999999999 jaisa koi fake ek jaisa number hai toh usko ignore karein
-                if n == n[0] * len(n):
+                if n == n[0] * len(n): # 999999999 jaise fake number ignore karo
                     continue
                 return n
     except Exception as e:
-        pass # Agar OCR fail ho jaye toh code crash na ho
+        pass 
         
     return None
 
@@ -70,16 +79,14 @@ def process_pdf(uploaded_file):
         for page_num in range(len(pdf_document)):
             page = pdf_document.load_page(page_num)
             
-            # Smart Scanner Function Call
             docket_id = get_docket_from_image(page)
             
-            # File ka naam tay karein
             if docket_id:
                 file_name = f"{docket_id}.pdf"
             else:
                 file_name = f"Unscanned_Page_{page_num + 1}.pdf"
                 
-            # --- SUPER COMPRESSION LOGIC (Size kam karne ke liye - 100-150KB) ---
+            # --- COMPRESSION LOGIC (100-150KB) ---
             pix_low = page.get_pixmap(dpi=150, colorspace=fitz.csGRAY)
             img = Image.frombytes("L",[pix_low.width, pix_low.height], pix_low.samples)
             
