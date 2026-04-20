@@ -13,12 +13,17 @@ def get_docket_from_image(page):
     pix = page.get_pixmap(dpi=300)
     img = Image.frombytes("RGB",[pix.width, pix.height], pix.samples)
     
-    # Helper Function: Check karne ke liye ki result mein NUMBER hai ya nahi
+    # Helper Function: Check karne ke liye ki result mein SIRF NUMBER hai ya nahi
     def is_valid_docket(text):
-        clean_text = "".join(x for x in text if x.isalnum() or x in "._-")
-        # Docket kam se kam 6 digit ka hona chahiye aur usme NUMBER hona zaruri hai
-        is_valid = len(clean_text) >= 6 and any(c.isdigit() for c in clean_text)
-        return is_valid, clean_text
+        # User requirement: Sirf numbers hone chahiye (0-9), baaki sab hata do
+        clean_text = "".join(x for x in text if x.isdigit())
+        # Docket kam se kam 8 digits ka hona chahiye (jaisa screenshots mein hai)
+        if len(clean_text) >= 8 and len(clean_text) <= 18:
+            # 99999999 jaise fake numbers ko block karein
+            if clean_text == clean_text[0] * len(clean_text):
+                return False, ""
+            return True, clean_text
+        return False, ""
 
     # 2. PEHLA TRY: Normal Barcode Scan
     decoded_objects = decode(img)
@@ -38,32 +43,32 @@ def get_docket_from_image(page):
         if valid:
             return clean_data
         
-    # 4. TISRA TRY (SMART OCR): Sirf Number wale Docket uthana
+    # 4. TISRA TRY (SMART OCR): Sirf "Numbers" uthana, alphabets nahi
     try:
         extracted_text = pytesseract.image_to_string(sharp_img)
         
-        # Condition A: Agar text mein AWB, Waybill ya Docket likha ho (AB ISME NUMBER HONA ZARURI HAI)
-        # \d lagane se ab ye "signifies" jaise words ko reject kar dega
-        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*([A-Za-z0-9]*\d[A-Za-z0-9]*)', extracted_text, re.IGNORECASE)
-        if keyword_match:
-            docket_str = keyword_match.group(1).strip()
-            if len(docket_str) >= 6: # Confirm lambaai
-                return docket_str
-            
-        # Condition B: Safexpress format jisme space hota hai (Jaise: 1000 3524 5962)
+        # Condition A: Safexpress format jisme space hota hai (Jaise: 1000 3524 5962)
         safe_match = re.search(r'\b(\d{4}\s\d{4}\s\d{4})\b', extracted_text)
         if safe_match:
             return safe_match.group(1).replace(" ", "")
 
-        # Condition C: Agar upar kuch na mile, toh lamba number dhoondo (Mobile, Date, Pincode chhodkar)
+        # Condition B: Agar text mein AWB, Waybill ya Docket likha ho aur aage PURE NUMBER ho
+        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*(\d{8,18})\b', extracted_text, re.IGNORECASE)
+        if keyword_match:
+            return keyword_match.group(1)
+
+        # Condition C: Agar upar kuch na mile, toh sirf standalone number dhoondo (Jo Barcode ke niche bada sa likha hota hai)
         lines = extracted_text.split('\n')
         for line in lines:
-            if re.search(r'mob|ph\s|phone|contact|pincode|gst|date|time', line, re.IGNORECASE):
+            # In sab cheezon wale number ko dhokhe se bhi mat uthana
+            if re.search(r'mob|ph[\s\:\.]|phone|contact|pincode|pin\s|gst|date|time|rs\.|amount|pkg|ref', line, re.IGNORECASE):
                 continue
                 
+            # Line mein sirf aur sirf NUMBER dhoondo (8 se 18 digit ka)
             nums = re.findall(r'\b\d{8,18}\b', line)
             for n in nums:
-                if n == n[0] * len(n): # 999999999 jaise fake number ignore karo
+                # Fake numbers jaise 999999999 ignore karo
+                if n == n[0] * len(n):
                     continue
                 return n
     except Exception as e:
