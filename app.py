@@ -40,9 +40,9 @@ def get_docket_from_image(page):
         if valid:
             return clean_data
         
-    # 4. TISRA TRY (SMART OCR): Jab barcode scan fail ho jaye (Aapke dhundle barcode ke liye)
+    # 4. TISRA TRY (SMART OCR): Sirf "Numbers" uthana, alphabets nahi
     try:
-        # Tesseract ko original aur sharp dono images par chalayenge taki koi number miss na ho
+        # Tesseract ko original aur sharp dono par chalayenge taki scan pakka ho
         text_original = pytesseract.image_to_string(img)
         text_sharp = pytesseract.image_to_string(sharp_img)
         extracted_text = text_original + " \n " + text_sharp
@@ -57,12 +57,11 @@ def get_docket_from_image(page):
         if keyword_match:
             return keyword_match.group(1)
 
-        # Condition C: (YAHAN BUG THA JO FIX KIYA HAI) - Pura line skip karne ki jagah sirf kachra hatayenge
-        # Mobile, Pincode, Order ID wagera ko explicitly remove karenge taki bada tracking number safe rahe
-        clean_text = re.sub(r'(?i)(?:mob|ph|phone|contact|pincode|pin|gst|order\s*id|pkg|po\s*no|invoice\s*no|ref|amount|rs)[\s\:\-\.]*([A-Za-z0-9]+)', ' ', extracted_text)
+        # Condition C: (YAHAN FIX KIYA HAI) - Pura line chhodne ki jagah sirf galat words aur unke number hatao
+        clean_text = re.sub(r'(?i)(?:mob|ph|phone|contact|pincode|pin|gst|date|time|rs|amount|pkg|ref|order\s*id|invoice\s*no|po\s*no)[\s\:\-\.]*[A-Za-z0-9]+', ' ', extracted_text)
         
-        # Ab bache hue text mein se 8 se 20 digit ka standalone number uthayenge (Jo barcode ke upar/niche hota hai)
-        # Regex update kiya hai taki barcode ki dandi (|) number ko block na kare
+        # Ab bache hue text mein se 8 se 20 digit ka standalone number uthayenge
+        # (?<!\d) aur (?!\d) ka use kiya h taki barcode ki khadi lines (|) number ko block na karein
         nums = re.findall(r'(?<!\d)\d{8,20}(?!\d)', clean_text)
         for n in nums:
             if n == n[0] * len(n): # Fake numbers jaise 999999999 ignore karo
