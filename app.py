@@ -15,11 +15,8 @@ def get_docket_from_image(page):
     
     # Helper Function: Check karne ke liye ki result mein SIRF NUMBER hai ya nahi
     def is_valid_docket(text):
-        # User requirement: Sirf numbers hone chahiye (0-9), baaki sab hata do
         clean_text = "".join(x for x in text if x.isdigit())
-        # Docket kam se kam 8 digits ka hona chahiye (jaisa screenshots mein hai)
-        if len(clean_text) >= 8 and len(clean_text) <= 18:
-            # 99999999 jaise fake numbers ko block karein
+        if len(clean_text) >= 8 and len(clean_text) <= 20:
             if clean_text == clean_text[0] * len(clean_text):
                 return False, ""
             return True, clean_text
@@ -43,9 +40,12 @@ def get_docket_from_image(page):
         if valid:
             return clean_data
         
-    # 4. TISRA TRY (SMART OCR): Sirf "Numbers" uthana, alphabets nahi
+    # 4. TISRA TRY (SMART OCR): Jab barcode scan fail ho jaye (Aapke dhundle barcode ke liye)
     try:
-        extracted_text = pytesseract.image_to_string(sharp_img)
+        # Tesseract ko original aur sharp dono images par chalayenge taki koi number miss na ho
+        text_original = pytesseract.image_to_string(img)
+        text_sharp = pytesseract.image_to_string(sharp_img)
+        extracted_text = text_original + " \n " + text_sharp
         
         # Condition A: Safexpress format jisme space hota hai (Jaise: 1000 3524 5962)
         safe_match = re.search(r'\b(\d{4}\s\d{4}\s\d{4})\b', extracted_text)
@@ -53,24 +53,21 @@ def get_docket_from_image(page):
             return safe_match.group(1).replace(" ", "")
 
         # Condition B: Agar text mein AWB, Waybill ya Docket likha ho aur aage PURE NUMBER ho
-        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*(\d{8,18})\b', extracted_text, re.IGNORECASE)
+        keyword_match = re.search(r'(?:AWB|Waybill|Docket|Tracking)[\s\:\-\#]*(?:No\.?)?[\s\:\-\#]*(\d{8,20})\b', extracted_text, re.IGNORECASE)
         if keyword_match:
             return keyword_match.group(1)
 
-        # Condition C: Agar upar kuch na mile, toh sirf standalone number dhoondo (Jo Barcode ke niche bada sa likha hota hai)
-        lines = extracted_text.split('\n')
-        for line in lines:
-            # In sab cheezon wale number ko dhokhe se bhi mat uthana
-            if re.search(r'mob|ph[\s\:\.]|phone|contact|pincode|pin\s|gst|date|time|rs\.|amount|pkg|ref', line, re.IGNORECASE):
+        # Condition C: (YAHAN BUG THA JO FIX KIYA HAI) - Pura line skip karne ki jagah sirf kachra hatayenge
+        # Mobile, Pincode, Order ID wagera ko explicitly remove karenge taki bada tracking number safe rahe
+        clean_text = re.sub(r'(?i)(?:mob|ph|phone|contact|pincode|pin|gst|order\s*id|pkg|po\s*no|invoice\s*no|ref|amount|rs)[\s\:\-\.]*([A-Za-z0-9]+)', ' ', extracted_text)
+        
+        # Ab bache hue text mein se 8 se 20 digit ka standalone number uthayenge (Jo barcode ke upar/niche hota hai)
+        # Regex update kiya hai taki barcode ki dandi (|) number ko block na kare
+        nums = re.findall(r'(?<!\d)\d{8,20}(?!\d)', clean_text)
+        for n in nums:
+            if n == n[0] * len(n): # Fake numbers jaise 999999999 ignore karo
                 continue
-                
-            # Line mein sirf aur sirf NUMBER dhoondo (8 se 18 digit ka)
-            nums = re.findall(r'\b\d{8,18}\b', line)
-            for n in nums:
-                # Fake numbers jaise 999999999 ignore karo
-                if n == n[0] * len(n):
-                    continue
-                return n
+            return n
     except Exception as e:
         pass 
         
